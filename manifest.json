@@ -1,21 +1,14 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Skim Tool",
-  "version": "1.0",
-  "browser_action": {
-    "default_icon": "assets/icon.png",
-    "default_title": "Skim Tool",
-    "default_popup": "source/popup.html"
-  },
-  "permissions": ["storage", "activeTab", "tabs"],
+  "version": "2.0",
+  "icons": { "128": "assets/icon.png" },
+  "action": { "default_icon": "assets/icon.png", "default_title": "Skim Tool (click to toggle)" },
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
   "background": {
+    "service_worker": "source/background.js",
     "scripts": ["source/background.js"],
-    "persistent": true
+    "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["source/content_script.js"]
-    }
-  ]
+  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" }
 }

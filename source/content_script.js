@@ -1,87 +1,98 @@
+// Injected on each toolbar click: removes skim rendering if present, otherwise applies it.
 (async () => {
-  const getConfig = async () => {
-    const v = await browser.storage.local.get("skimtool_cfg");
-    return v.skimtool_cfg || { mode: "heuristic", levels: 8 };
+  if (globalThis.skimOff) return globalThis.skimOff();
+  const ext = globalThis.browser ?? chrome;
+  let busy = false, off = false, timer, keepAlive;
+  const originals = new Map(); // wrapper -> the page's own text node, put back on toggle-off
+  const onScroll = () => { clearTimeout(timer); timer = setTimeout(next, 100); }; // once scrolling pauses
+  const opts = { capture: true, passive: true };
+  globalThis.skimOff = () => {
+    off = true;
+    globalThis.skimOff = null;
+    clearInterval(keepAlive);
+    removeEventListener('scroll', onScroll, opts);
+    originals.forEach((node, wrap) => wrap.replaceWith(node));
   };
 
-  const heuristicScore = w => {
-    if (!w.trim()) return 0;
-    const stop = ["the","a","an","in","on","and","or","is","are","to","of","for","that","with","as"];
-    return stop.includes(w.toLowerCase()) ? 0 : Math.min(1, w.length / 8);
+  // Visible text nodes, grouped by their enclosing block element (paragraph, list item, ...).
+  const SKIP = 'script,style,noscript,textarea,select,code,pre,kbd,samp,svg,math';
+  const blockOf = el => {
+    while (el.parentElement && getComputedStyle(el).display.startsWith('inline')) el = el.parentElement;
+    return el;
   };
-
-  async function scoreText(text, mode) {
-    if (mode === "server") {
-      return new Promise(resolve => {
-        chrome.runtime.sendMessage({ action: "server_score", text }, response => {
-          if (response && response.scores) resolve(response.scores);
-          else resolve(text.split(/(\b|\s+)/).map(w => heuristicScore(w)));
-        });
-      });
-    }
-    return text.split(/(\b|\s+)/).map(heuristicScore);
+  const blocks = new Map();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node; (node = walker.nextNode());) {
+    const el = node.parentElement;
+    if (!node.data.trim() || el.closest(SKIP) || el.isContentEditable || !el.checkVisibility()) continue;
+    const block = blockOf(el);
+    if (!blocks.has(block)) blocks.set(block, []);
+    blocks.get(block).push(node);
   }
 
-  async function highlightPage() {
-    const cfg = await getConfig();
-    const levels = cfg.levels || 8;
-    const minOpacity = 0.2;
-    const maxOpacity = 1.0;
+  // Units of work: prose blocks (12+ words; menus, buttons and headings stay untouched),
+  // split at text-node boundaries into runs of about 150 words.
+  const words = nodes => nodes.flatMap(n => n.data.split(/\s+/).filter(Boolean));
+  let pending = [];
+  for (const nodes of blocks.values()) {
+    if (words(nodes).length < 12) continue;
+    let unit = [], count = 0;
+    for (const node of nodes) {
+      unit.push(node);
+      if ((count += words([node]).length) >= 150) { pending.push(unit); unit = []; count = 0; }
+    }
+    if (unit.length) pending.push(unit);
+  }
 
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-    const textNodes = [];
-    let node;
-    while (node = walker.nextNode()) {
-      if (node.textContent.trim().length > 0 && node.parentNode.offsetParent !== null) {
-        textNodes.push(node);
+  // Lightweight scoring (right-click menu) uses word frequencies instead of the model.
+  const { light } = await ext.storage.local.get('light');
+  if (off) return;
+
+  // Score only what is on or near the screen (within one screen), nearest first, more as you scroll.
+  const distance = unit => {
+    const range = new Range();
+    range.setStartBefore(unit[0]);
+    range.setEndAfter(unit.at(-1));
+    const { top, bottom } = range.getBoundingClientRect();
+    return Math.max(0, -bottom, top - innerHeight);
+  };
+  const next = async () => {
+    if (busy || off) return;
+    pending = pending.filter(u => u.every(n => n.isConnected)); // the page may have removed text since
+    // Step 1: pick up to 4 not-yet-scored paragraphs within one screen of the viewport, nearest first.
+    const batch = pending.map(u => [distance(u), u]).filter(([d]) => d < innerHeight).sort((a, b) => a[0] - b[0]).slice(0, 4).map(([, u]) => u);
+    if (!batch.length) return;
+    pending = pending.filter(u => !batch.includes(u));
+    busy = true;
+    // Step 2: get p(keep) for every word from the background script (background.js): the model (score())
+    // or, in lightweight mode, English word frequencies (lightScore()).
+    const keep = await ext.runtime.sendMessage({ light, paragraphs: batch.map(words) }).catch(e => ({ error: e.message }));
+    busy = false;
+    if (off) return;
+    if (keep.error) { globalThis.skimOff(); return alert('Skim Tool: ' + keep.error); }
+    // Step 4: fade the words, then look for more paragraphs near the screen.
+    batch.forEach((unit, j) => render(unit, keep[j]));
+    next();
+  };
+  if (!light) keepAlive = setInterval(() => ext.runtime.sendMessage({ paragraphs: [] }).catch(() => {}), 20000); // keep the model loaded while on
+  addEventListener('scroll', onScroll, opts);
+  next();
+
+  // Step 4, the rendering: each text node is swapped for a <skim-text> holding one <skim-w> per word,
+  // in the same order as the scores. Whitespace stays plain text, so line breaking is unchanged.
+  function render(nodes, keep) {
+    let k = 0;
+    for (const node of nodes) {
+      const wrap = document.createElement('skim-text');
+      for (const part of node.data.split(/(\s+)/)) {
+        if (!part.trim()) { wrap.append(part); continue; }
+        const word = wrap.appendChild(document.createElement('skim-w'));
+        word.textContent = part;
+        // p(keep) in [0, 1] -> one of 4 opacity steps: .3 (likely dropped) .53 .77 1 (kept).
+        word.style.opacity = 0.3 + 0.7 * Math.floor(keep[k++] * 3.999) / 3;
       }
-    }
-
-    for (const t of textNodes) {
-      const words = t.textContent.split(/(\b|\s+)/);
-      const scores = await scoreText(t.textContent, cfg.mode);
-
-      if (scores.length !== words.length) continue;
-
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < words.length; i++) {
-        const span = document.createElement("span");
-        span.className = "skimtool_span";
-
-        let level = Math.floor(scores[i] * levels);
-        level = Math.min(Math.max(level, 0), levels - 1);
-
-        const opacity = minOpacity + (level / (levels - 1)) * (maxOpacity - minOpacity);
-        span.style.opacity = opacity;
-
-        span.textContent = words[i];
-        frag.appendChild(span);
-      }
-
-      const wrapper = document.createElement("span");
-      wrapper.className = "skimtool_overlay";
-      wrapper.appendChild(frag);
-      t.parentNode.replaceChild(wrapper, t);
+      node.replaceWith(wrap);
+      originals.set(wrap, node); // put back on toggle-off
     }
   }
-
-  function clearHighlights() {
-    document.querySelectorAll('.skimtool_overlay').forEach(overlay => {
-      const parent = overlay.parentNode;
-      while (overlay.firstChild) parent.insertBefore(overlay.firstChild, overlay);
-      overlay.remove();
-    });
-
-    document.querySelectorAll('.skimtool_span').forEach(span => {
-      const parent = span.parentNode;
-      while (span.firstChild) parent.insertBefore(span.firstChild, span);
-      span.remove();
-    });
-  }
-
-  browser.runtime.onMessage.addListener(msg => {
-    if(msg.action === "run_skimtool") highlightPage();
-    if(msg.action === "clear_skimtool") clearHighlights();
-  });
-
 })();
