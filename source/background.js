@@ -27,10 +27,12 @@ const toggle = tab => tab.url?.startsWith(VIEWER)
 chrome.action.onClicked.addListener(toggle);
 
 // Problems show as a ✕ on the toolbar icon for a few seconds, with the reason in its tooltip.
+let flashTimer;
 function flash(reason) {
   chrome.action.setBadgeText({ text: '✕' });
   chrome.action.setTitle({ title: 'Skim Tool: ' + reason });
-  setTimeout(() => {
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
     chrome.action.setBadgeText({ text: '' });
     chrome.action.setTitle({ title: chrome.runtime.getManifest().action.default_title });
   }, 4000);

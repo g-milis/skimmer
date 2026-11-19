@@ -6,8 +6,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.mjs';
 const ext = globalThis.browser ?? chrome;
 const url = decodeURIComponent(location.hash.slice(1));
 const msg = document.getElementById('msg');
-// On failure, go back to the PDF; background.js shows the reason on the toolbar icon.
-const fail = e => ext.runtime.sendMessage({ fail: e.name === 'InvalidPDFException' ? 'not a PDF' : e.message }).finally(() => history.back());
+// On failure, go back to the PDF (once, even if several pages fail); background.js shows the reason on the icon.
+let failed;
+const fail = e => failed ??= ext.runtime.sendMessage({ fail: e.name === 'InvalidPDFException' ? 'not a PDF' : e.message }).finally(() => history.back());
 
 let pdf;
 const pages = []; // per page: { div, page, viewport }
@@ -65,7 +66,7 @@ async function draw(p) {
 }
 (function redrawOnZoom() {
   matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => {
-    pages.filter(p => p.div.querySelector('canvas')).forEach(draw);
+    pages.filter(p => p.div.querySelector('canvas')).forEach(p => draw(p).catch(fail));
     redrawOnZoom();
   }, { once: true });
 })();
@@ -122,9 +123,12 @@ async function show(p, light) {
 }
 
 // Scroll to a destination inside the PDF: a page, and the point on it when given ([page, {name: 'XYZ'}, x, y, zoom]).
+// Links to destinations the PDF doesn't have do nothing.
 async function jump(dest) {
-  const [ref, kind, x, y] = typeof dest === 'string' ? await pdf.getDestination(dest) : dest;
-  const { div, viewport } = pages[Number.isInteger(ref) ? ref : await pdf.getPageIndex(ref)];
+  const [ref, kind, x, y] = (typeof dest === 'string' ? await pdf.getDestination(dest) : dest) ?? [];
+  const target = pages[Number.isInteger(ref) ? ref : await pdf.getPageIndex(ref).catch(() => -1)];
+  if (!target) return;
+  const { div, viewport } = target;
   const top = kind?.name === 'XYZ' && y != null ? viewport.convertToViewportPoint(x ?? 0, y)[1] : 0;
   scrollTo({ top: div.offsetTop + top - 8 });
 }
