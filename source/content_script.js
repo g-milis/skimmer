@@ -1,7 +1,8 @@
 // Injected on each toolbar click: removes skim rendering if present, otherwise applies it.
 (async () => {
-  if (globalThis.skimOff) return globalThis.skimOff();
   const ext = globalThis.browser ?? chrome;
+  if (document.contentType === 'application/pdf') return ext.runtime.sendMessage({ pdf: location.href }); // open in viewer.html
+  if (globalThis.skimOff) return globalThis.skimOff();
   let busy = false, off = false, timer, keepAlive;
   const originals = new Map(); // wrapper -> the page's own text node, put back on toggle-off
   const onScroll = () => { clearTimeout(timer); timer = setTimeout(next, 100); }; // once scrolling pauses
@@ -69,7 +70,7 @@
     const keep = await ext.runtime.sendMessage({ light, paragraphs: batch.map(words) }).catch(e => ({ error: e.message }));
     busy = false;
     if (off) return;
-    if (keep.error) { globalThis.skimOff(); return alert('Skim Tool: ' + keep.error); }
+    if (keep.error) { globalThis.skimOff(); return ext.runtime.sendMessage({ fail: keep.error }); } // shown on the icon
     // Step 4: fade the words, then look for more paragraphs near the screen.
     batch.forEach((unit, j) => render(unit, keep[j]));
     next();

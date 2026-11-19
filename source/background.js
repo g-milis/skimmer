@@ -11,9 +11,30 @@ ort.env.wasm.wasmPaths = { wasm: chrome.runtime.getURL('source/ort-wasm-simd-thr
 ort.env.wasm.numThreads = 1;
 
 // Toolbar click injects the content script, which toggles skim rendering on the page.
-// Browser pages (brave://, about:, extension stores) refuse injection; nothing to do there.
-chrome.action.onClicked.addListener(tab =>
-  chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['source/content_script.js'] }).catch(() => {}));
+// PDFs open in Skim Tool's own viewer (viewer.html): the content script asks for it on PDF documents.
+// Firefox's PDF viewer refuses extensions, so there a web page that refuses injection is tried as a PDF.
+// Other refusals (brave://, about:, extension stores, local files) leave nothing to do.
+// Extensions cannot read local files, so local PDFs are not supported. Clicking in the viewer goes back.
+const VIEWER = chrome.runtime.getURL('source/viewer.html');
+const openViewer = (tabId, url) => url.startsWith('file:')
+  ? flash('local PDFs are not supported')
+  : chrome.tabs.update(tabId, { url: VIEWER + '#' + encodeURIComponent(url) });
+const toggle = tab => tab.url?.startsWith(VIEWER)
+  ? chrome.tabs.update(tab.id, { url: decodeURIComponent(new URL(tab.url).hash.slice(1)) })
+  : chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['source/content_script.js'] })
+    .catch(() => (VIEWER.startsWith('moz-extension:') && /^https?:/.test(tab.url) ? openViewer(tab.id, tab.url)
+      : flash(tab.url?.startsWith('file:') ? 'local PDFs are not supported' : "can't run on this page")));
+chrome.action.onClicked.addListener(toggle);
+
+// Problems show as a ✕ on the toolbar icon for a few seconds, with the reason in its tooltip.
+function flash(reason) {
+  chrome.action.setBadgeText({ text: '✕' });
+  chrome.action.setTitle({ title: 'Skim Tool: ' + reason });
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: '' });
+    chrome.action.setTitle({ title: chrome.runtime.getManifest().action.default_title });
+  }, 4000);
+}
 
 // Right-click the toolbar icon to switch to lightweight scoring (no model).
 chrome.runtime.onInstalled.addListener(() => chrome.storage.local.get('light', ({ light }) => chrome.contextMenus.removeAll(() =>
@@ -22,7 +43,9 @@ chrome.contextMenus.onClicked.addListener(info => chrome.storage.local.set({ lig
 
 // Step 2: the content script sends the words of the paragraphs near the screen ({ light, paragraphs: [[word, ...], ...] }).
 // They are scored as one stream (fewer model runs, more context) and the scores are split back per paragraph.
-chrome.runtime.onMessage.addListener(({ light, paragraphs }, _sender, reply) => {
+chrome.runtime.onMessage.addListener(({ light, paragraphs, pdf, fail }, sender, reply) => {
+  if (pdf) return void openViewer(sender.tab.id, pdf);
+  if (fail) return void flash(fail);
   (light ? lightScore(paragraphs.flat()) : load().then(m => score(m, paragraphs.flat())))
     .then(keep => reply(paragraphs.map(p => keep.splice(0, p.length))), e => reply({ error: e.message }));
   return true; // reply asynchronously
