@@ -11,7 +11,7 @@ ort.env.wasm.wasmPaths = { wasm: chrome.runtime.getURL('source/ort-wasm-simd-thr
 ort.env.wasm.numThreads = 1;
 
 // Toolbar click injects the content script, which toggles skim rendering on the page.
-// PDFs open in Skim Tool's own viewer (viewer.html): the content script asks for it on PDF documents.
+// PDFs open in Skimmer's own viewer (viewer.html): the content script asks for it on PDF documents.
 // Firefox's PDF viewer refuses extensions, so there a web page that refuses injection is tried as a PDF.
 // Other refusals (brave://, about:, extension stores, local files) leave nothing to do.
 // Extensions cannot read local files, so local PDFs are not supported. Clicking in the viewer goes back.
@@ -30,7 +30,7 @@ chrome.action.onClicked.addListener(toggle);
 let flashTimer;
 function flash(reason) {
   chrome.action.setBadgeText({ text: '✕' });
-  chrome.action.setTitle({ title: 'Skim Tool: ' + reason });
+  chrome.action.setTitle({ title: 'Skimmer: ' + reason });
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => {
     chrome.action.setBadgeText({ text: '' });

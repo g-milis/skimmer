@@ -1,4 +1,4 @@
-// Skim Tool's PDF viewer: draws the PDF with PDF.js and fades less important words with white boxes.
+// Skimmer's PDF viewer: draws the PDF with PDF.js and fades less important words with white boxes.
 // Opened by background.js with the PDF's address after the #.
 import * as pdfjs from './pdf.min.mjs'; // PDF.js 6.5.438 (Apache-2.0)
 pdfjs.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.mjs';
@@ -50,7 +50,7 @@ async function download() {
   if (await ext.permissions.contains({ origins })) throw new Error(`could not download the PDF (${res?.status ?? 'network error'})`);
   msg.textContent = '';
   const button = msg.appendChild(document.createElement('button'));
-  button.textContent = `Allow Skim Tool to open PDFs from ${new URL(url).host}`;
+  button.textContent = `Allow Skimmer to open PDFs from ${new URL(url).host}`;
   await new Promise(resolve => { button.onclick = () => ext.permissions.request({ origins }).then(ok => ok && resolve()); });
   msg.textContent = 'Loading…';
   return download();

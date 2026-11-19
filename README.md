@@ -1,6 +1,6 @@
-# Skim Tool
+# Skimmer
 
-The Skim Tool is a Firefox and Brave (Chromium) extension for easier reading of long texts. It modulates text opacity to highlight only semantically important words in HTML web pages and PDF files. It uses a small local BERT-style model, so no AI summarization. The content is there, it just becomes easier to skim, as shown:
+Skimmer is a Firefox and Brave (Chromium) extension for easier reading of long texts. It modulates text opacity to highlight only semantically important words in HTML web pages and PDF files. It uses a small local BERT-style model, so no AI summarization. The content is there, it just becomes easier to skim, as shown:
 
 <img src="assets/demo.png" width="800">
 
@@ -8,19 +8,19 @@ The Skim Tool is a Firefox and Brave (Chromium) extension for easier reading of 
 ## Usage
 - Click the icon to toggle highlights.
 - Right-click the icon and tick "Lightweight scoring (no model)" to fade common English words instead. It is faster but worse.
-- On a PDF, the icon reopens it in Skim Tool's own viewer (click again to go back). Some sites ask you to allow access once. Local PDF files are not supported.
+- On a PDF, the icon reopens it in Skimmer's own viewer (click again to go back). Some sites ask you to allow access once. Local PDF files are not supported.
 
 ## Installation
 
 ### Firefox
 1. Navigate to about:debugging#/runtime/this-firefox.
-2. Click "Load Temporary Add-on…" and select manifest.json in the Skim Tool folder.
+2. Click "Load Temporary Add-on…" and select manifest.json in the Skimmer folder.
 
 Temporary add-ons are removed when Firefox restarts.
 
 ### Brave
 1. Navigate to brave://extensions and turn on "Developer mode".
-2. Click "Load unpacked" and select the Skim Tool folder.
+2. Click "Load unpacked" and select the Skimmer folder.
 
 In both browsers, you may **pin the icon from the Extensions (puzzle) menu**.
 
